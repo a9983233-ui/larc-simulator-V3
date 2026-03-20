@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LARC 임상 패턴 시뮬레이터 v3.3 — DM/LR Hierarchical Override Algorithm</title>
+<meta name="description" content="국소 진행성 직장암(LARC) DM/LR 이중 축 위험도 분류 기반 치료 패턴 시뮬레이터 v3.3. Hierarchical Override Model. 순천향대학교 부천병원 MDT 알고리즘.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── TOKENS ────────────────────────────────────────────── */
+:root {
+  --navy:        #1C1F24;
+  --navy-mid:    #253040;
+  --navy-light:  #2D4A6A;
+  --accent:      #1756A9;
+  --accent-soft: #E6EEFC;
+  --red-axis:    #A92B17;
+  --red-soft:    #FDF0EE;
+
+  --p1-bg:#FDF0EF; --p1-bd:#E2A09A; --p1-tx:#7A1A14;
+  --p2-bg:#FDF7EE; --p2-bd:#DFC17A; --p2-tx:#6E4607;
+  --p3-bg:#F0FAF4; --p3-bd:#7DC49A; --p3-tx:#1A5230;
+  --p4-bg:#FDF7EE; --p4-bd:#DFC17A; --p4-tx:#6E4607;
+  --p5-bg:#EEF4FD; --p5-bd:#7AB6E8; --p5-tx:#0D4480;
+  --p6-bg:#EBF8F4; --p6-bd:#5BBFA0; --p6-tx:#0B5440;
+
+  --bg:     #F5F6F9;
+  --card:   #FFFFFF;
+  --border: #E2E5EB;
+  --border2:#EEF0F5;
+  --g100:   #F7F8FA;
+  --g200:   #ECEEF3;
+  --g300:   #D6D9E2;
+  --g400:   #A8AEBB;
+  --g600:   #5C6475;
+  --g700:   #3A4050;
+  --g900:   #1A1D24;
+
+  --r4:  4px; --r6:  6px; --r10: 10px; --r14: 14px; --r20: 20px;
+  --sh1: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --sh2: 0 4px 14px rgba(0,0,0,.08), 0 1px 4px rgba(0,0,0,.04);
+  --sh3: 0 8px 28px rgba(0,0,0,.10);
+  --ease: cubic-bezier(.4,0,.2,1);
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--g900);line-height:1.6;min-height:100vh}
+
+/* ── TOPBAR ─────────────────────────────────────────── */
+.topbar{
+  background:var(--navy);height:50px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 1.75rem;position:sticky;top:0;z-index:200;
+  box-shadow:0 2px 10px rgba(0,0,0,.28);
+}
+.tb-left{display:flex;align-items:center;gap:10px}
+.tb-logo{font-family:'Libre Baskerville',serif;font-size:15px;color:#fff;letter-spacing:.01em}
+.tb-sep{width:1px;height:18px;background:rgba(255,255,255,.18)}
+.tb-sub{font-size:11px;color:rgba(255,255,255,.45);font-weight:300;letter-spacing:.04em}
+.tb-badge{
+  font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:500;
+  padding:3px 9px;border-radius:4px;
+  background:rgba(255,255,255,.10);color:rgba(255,255,255,.65);
+  letter-spacing:.07em;
+}
+.tb-ver{
+  font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;
+  padding:2px 7px;border-radius:3px;
+  background:rgba(23,86,169,.55);color:rgba(255,255,255,.85);
+  letter-spacing:.05em;
+}
+
+/* ── HERO ───────────────────────────────────────────── */
+.hero{
+  background:linear-gradient(145deg,var(--navy) 0%,var(--navy-mid) 65%,var(--navy-light) 100%);
+  padding:3rem 2rem 2.5rem;overflow:hidden;position:relative;
+}
+.hero::before{content:'';position:absolute;right:-80px;top:-80px;width:340px;height:340px;border-radius:50%;background:rgba(255,255,255,.025)}
+.hero::after{content:'';position:absolute;right:60px;bottom:-90px;width:220px;height:220px;border-radius:50%;background:rgba(255,255,255,.03)}
+.hero-inner{max-width:960px;margin:0 auto;position:relative}
+.hero-eye{font-size:10px;font-weight:600;letter-spacing:.14em;color:rgba(255,255,255,.42);text-transform:uppercase;margin-bottom:9px}
+.hero-title{font-family:'Libre Baskerville',serif;font-size:clamp(20px,3.2vw,32px);color:#fff;line-height:1.28;margin-bottom:9px}
+.hero-title em{color:#7ECAF5;font-style:normal}
+.hero-desc{font-size:13.5px;color:rgba(255,255,255,.55);font-weight:300;max-width:580px;margin-bottom:1.4rem;line-height:1.75}
+.hero-logic{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);
+  border-radius:8px;padding:9px 14px;margin-bottom:1.2rem;
+}
+.hero-logic-icon{font-size:13px}
+.hero-logic-text{font-size:11.5px;color:rgba(255,255,255,.7);line-height:1.5}
+.hero-logic-text strong{color:#7ECAF5;font-weight:600}
+.hero-tags{display:flex;flex-wrap:wrap;gap:7px}
+.hero-tag{font-size:11px;padding:3px 9px;border-radius:16px;border:1px solid rgba(255,255,255,.16);color:rgba(255,255,255,.6);font-weight:400}
+
+/* ── MAIN ───────────────────────────────────────────── */
+.main{max-width:1020px;margin:0 auto;padding:1.75rem 1.25rem 4rem}
+.sim-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+@media(max-width:720px){.sim-grid{grid-template-columns:1fr}}
+
+/* ── CARDS ──────────────────────────────────────────── */
+.card{background:var(--card);border-radius:var(--r14);box-shadow:var(--sh1);border:1px solid var(--border)}
+.card-head{padding:.9rem 1.2rem .75rem;border-bottom:1px solid var(--border2);display:flex;align-items:center;gap:10px}
+.card-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.icon-dm{background:#DDEEFA;color:#1555A0}
+.icon-lr{background:#FDE8E6;color:#9B2A20}
+.icon-mod{background:#E8F5EE;color:#1A6B3C}
+.card-title{font-size:13px;font-weight:700;color:var(--g900)}
+.card-sub{font-size:11px;color:var(--g400);margin-top:1px}
+.card-body{padding:1rem 1.2rem}
+
+/* ── FACTOR GROUPS ──────────────────────────────────── */
+.fgroup-sep{
+  display:flex;align-items:center;gap:8px;margin:10px 0 7px;
+}
+.fgroup-sep:first-child{margin-top:0}
+.fgroup-badge{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:9px;font-weight:600;padding:2px 7px;border-radius:3px;
+  letter-spacing:.06em;white-space:nowrap;flex-shrink:0;
+}
+.fbadge-high{background:#FFEDED;color:#901A13;border:1px solid #F0B4B0}
+.fbadge-high-lr{background:#FFECEC;color:#A02010;border:1px solid #EFAEAA}
+.fbadge-int{background:#FFF6E4;color:#7A4E06;border:1px solid #F0D898}
+.fgroup-line{flex:1;height:1px;background:var(--border2)}
+.fgroup-note{font-size:10px;color:var(--g400);white-space:nowrap}
+
+/* ── FACTOR ITEMS ───────────────────────────────────── */
+.factor-item{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:8px 10px;border-radius:var(--r6);cursor:pointer;
+  transition:background .18s var(--ease);margin-bottom:3px;
+  border:1.5px solid transparent;
+}
+.factor-item:hover{background:var(--g100)}
+.factor-item.sel-dm-high{background:#EBF4FD;border-color:#9ABFE8}
+.factor-item.sel-dm-int{background:#FFF6E8;border-color:#E8C97A}
+.factor-item.sel-lr-high{background:#FEF0EF;border-color:#F5A8A2}
+.factor-item.sel-lr-int{background:#FFF6E8;border-color:#E8C97A}
+.factor-cb{width:15px;height:15px;border-radius:3px;cursor:pointer;flex-shrink:0;margin-top:2px}
+.factor-cb.dm-high-cb{accent-color:var(--accent)}
+.factor-cb.dm-int-cb{accent-color:#C87E10}
+.factor-cb.lr-high-cb{accent-color:var(--red-axis)}
+.factor-cb.lr-int-cb{accent-color:#C87E10}
+.factor-name{font-size:12.5px;font-weight:500;color:var(--g900);line-height:1.4}
+.factor-desc{font-size:10.5px;color:var(--g400);margin-top:1px;line-height:1.4}
+
+/* ── AXIS RESULT BAR ────────────────────────────────── */
+.axis-bar{
+  margin-top:12px;padding-top:12px;border-top:1px solid var(--border2);
+  display:flex;align-items:center;gap:10px;
+}
+.axis-badge{
+  font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+  padding:3px 10px;border-radius:4px;white-space:nowrap;min-width:100px;text-align:center;
+  transition:background .25s,color .25s;
+}
+.ab-none{background:var(--g200);color:var(--g400)}
+.ab-low-dm{background:#E6F0FB;color:#0C4A9A;border:1px solid #AACAE8}
+.ab-int{background:#FFF5E4;color:#6E4607;border:1px solid #E8C87A}
+.ab-high-dm{background:#1756A9;color:#fff}
+.ab-low-lr{background:#F0FAF4;color:#1A5230;border:1px solid #8ED0A0}
+.ab-high-lr{background:#A92B17;color:#fff}
+.axis-segs{display:flex;gap:3px;flex:1}
+.axis-seg{flex:1;height:4px;border-radius:2px;background:var(--g200);transition:background .3s}
+.as-low{background:#2ECC71}.as-int{background:#E67E22}.as-high{background:#E74C3C}
+.axis-rule{
+  font-size:10px;color:var(--g400);font-style:italic;margin-top:6px;padding-top:6px;
+  border-top:1px dashed var(--border2);line-height:1.5;
+}
+.axis-rule strong{font-style:normal;color:var(--g600)}
+
+/* ── MODIFIER ───────────────────────────────────────── */
+.msec-label{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--g400);margin:12px 0 6px;padding-top:11px;border-top:1px solid var(--border2)}
+.msec-label:first-child{margin-top:0;border-top:none;padding-top:0}
+.mod-item{display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:var(--r6);cursor:pointer;margin-bottom:2px;border:1.5px solid transparent;transition:background .18s var(--ease)}
+.mod-item:hover{background:var(--g100)}
+.mod-item.sel{background:#EFF9F4;border-color:#8FD4AA}
+.mod-code{font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;color:var(--g400);flex-shrink:0;min-width:22px}
+.mod-label{font-size:11.5px;color:var(--g700);flex:1;line-height:1.4}
+
+/* ── STATS STRIP ────────────────────────────────────── */
+.stats-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:1.1rem}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r10);padding:9px 10px;text-align:center;box-shadow:var(--sh1)}
+.stat-val{display:block;font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600;line-height:1;margin-bottom:3px}
+.stat-key{font-size:9.5px;color:var(--g400);font-weight:500;letter-spacing:.04em}
+.sv-dm{color:var(--accent)}.sv-lr{color:var(--red-axis)}.sv-p{color:var(--navy)}
+.sv-dm-lv{color:var(--accent)}.sv-lr-lv{color:var(--red-axis)}
+
+/* ── MATRIX ─────────────────────────────────────────── */
+.matrix-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r14);padding:1rem 1.2rem 1rem;box-shadow:var(--sh1);margin-bottom:1.1rem}
+.mx-title{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--g400);margin-bottom:10px}
+.mx-grid{display:grid;grid-template-columns:48px repeat(3,1fr);gap:3px}
+.mx-corner{font-size:8.5px;color:var(--g400);display:flex;align-items:flex-end;justify-content:flex-end;padding:0 5px 5px 0;line-height:1.3}
+.mx-col{font-size:9px;font-weight:700;text-align:center;padding:5px 3px;background:var(--g100);border-radius:5px;color:var(--g600);line-height:1.3}
+.mx-row{font-size:9px;font-weight:700;text-align:right;padding-right:5px;display:flex;align-items:center;justify-content:flex-end;color:var(--g600);line-height:1.3}
+.mx-cell{border-radius:8px;padding:7px 4px;text-align:center;border:2px solid transparent;cursor:default;transition:transform .18s var(--ease),box-shadow .18s var(--ease)}
+.mx-cell .pc{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:700;display:block;line-height:1.2}
+.mx-cell .pd{font-size:8.5px;display:block;margin-top:2px;opacity:.75;line-height:1.3}
+.c-p1{background:var(--p1-bg);color:var(--p1-tx)}.c-p2{background:var(--p2-bg);color:var(--p2-tx)}
+.c-p3{background:var(--p3-bg);color:var(--p3-tx)}.c-p4{background:var(--p4-bg);color:var(--p4-tx)}
+.c-p5{background:var(--p5-bg);color:var(--p5-tx)}.c-p6{background:var(--p6-bg);color:var(--p6-tx)}
+.mx-cell.active{transform:scale(1.09);box-shadow:0 0 0 2.5px var(--accent),var(--sh2);z-index:2;position:relative}
+.mx-note{font-size:9.5px;color:var(--g400);line-height:1.6;margin-top:9px;padding-top:9px;border-top:1px solid var(--border2)}
+.mx-note .dm{color:var(--accent);font-weight:600}.mx-note .lr{color:var(--red-axis);font-weight:600}
+
+/* ── RESULT CARD ─────────────────────────────────────── */
+.result-card{border-radius:var(--r14);padding:1.2rem;border:2px solid var(--border);background:var(--g100);transition:background .25s,border-color .25s;margin-bottom:1rem}
+.result-card.rp1{background:var(--p1-bg);border-color:var(--p1-bd)}
+.result-card.rp2{background:var(--p2-bg);border-color:var(--p2-bd)}
+.result-card.rp3{background:var(--p3-bg);border-color:var(--p3-bd)}
+.result-card.rp4{background:var(--p4-bg);border-color:var(--p4-bd)}
+.result-card.rp5{background:var(--p5-bg);border-color:var(--p5-bd)}
+.result-card.rp6{background:var(--p6-bg);border-color:var(--p6-bd)}
+.rc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+.rc-title{font-family:'Libre Baskerville',serif;font-size:14px;font-weight:700;color:var(--g900);line-height:1.4}
+.rc-sub{font-size:11px;color:var(--g600);margin-top:2px}
+.rc-pill{font-family:'IBM Plex Mono',monospace;font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:20px;flex-shrink:0;white-space:nowrap}
+.pp1{background:var(--p1-bd);color:var(--p1-tx)}.pp2{background:var(--p2-bd);color:var(--p2-tx)}
+.pp3{background:var(--p3-bd);color:var(--p3-tx)}.pp4{background:var(--p4-bd);color:var(--p4-tx)}
+.pp5{background:var(--p5-bd);color:var(--p5-tx)}.pp6{background:var(--p6-bd);color:var(--p6-tx)}
+.rc-div{height:1px;background:rgba(0,0,0,.06);margin:9px 0}
+.rc-tx{font-size:12.5px;color:var(--g700);line-height:1.75;margin-bottom:8px}
+.rc-note{font-size:11.5px;color:var(--g700);line-height:1.65;font-style:italic;padding:8px 10px;background:rgba(255,255,255,.55);border-radius:6px;border-left:3px solid rgba(0,0,0,.12);margin-bottom:8px}
+.rc-refs{font-size:10.5px;color:var(--g400);line-height:1.65}
+
+/* ── MODIFIER RESULT ─────────────────────────────────── */
+.mod-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--r14);box-shadow:var(--sh1);overflow:hidden;margin-bottom:1rem;display:none}
+.mod-panel-head{padding:9px 14px;background:#EFF9F4;border-bottom:1px solid #C0EACC;font-size:11.5px;font-weight:700;color:#1A5C31;letter-spacing:.02em}
+.mod-panel-body{padding:10px 14px}
+.mod-item-result{font-size:11.5px;color:var(--g700);padding:7px 0;border-bottom:1px solid var(--border2);line-height:1.65;display:flex;gap:8px}
+.mod-item-result:last-child{border-bottom:none}
+.mod-icon{flex-shrink:0;margin-top:1px;color:#1A6E3C;font-size:12px}
+
+/* ── dMMR BANNER ─────────────────────────────────────── */
+.dmmr-banner{background:linear-gradient(135deg,#EEF4FD,#E5EFFA);border:1px solid #A8C8EE;border-radius:var(--r10);padding:11px 14px;margin-bottom:1.2rem;display:flex;gap:11px;align-items:flex-start}
+.dmmr-icon{font-size:17px;flex-shrink:0;margin-top:1px}
+.dmmr-text{font-size:11.5px;color:#0D4070;line-height:1.65}
+.dmmr-text strong{font-weight:700;display:block;margin-bottom:2px}
+
+/* ── LEGEND ──────────────────────────────────────────── */
+.legend{background:var(--card);border:1px solid var(--border);border-radius:var(--r10);padding:.9rem 1.2rem;margin-bottom:1.2rem;box-shadow:var(--sh1)}
+.legend-title{font-size:10px;font-weight:700;color:var(--g400);letter-spacing:.09em;text-transform:uppercase;margin-bottom:9px}
+.legend-grid{display:flex;flex-wrap:wrap;gap:7px}
+.legend-item{display:flex;align-items:center;gap:7px;padding:4px 10px;border-radius:6px;border:1px solid transparent;font-size:11.5px;font-weight:500;cursor:default}
+.legend-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+
+/* ── OVERRIDE CALLOUT ────────────────────────────────── */
+.override-callout{
+  background:linear-gradient(135deg,#F7F9FE,#F2F6FD);
+  border:1px solid #C4D5EE;border-radius:var(--r10);
+  padding:10px 14px;margin-bottom:1.2rem;
+}
+.oc-title{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);margin-bottom:7px;display:flex;align-items:center;gap:5px}
+.oc-row{display:flex;align-items:baseline;gap:8px;margin-bottom:4px;font-size:11.5px;color:var(--g700);line-height:1.55}
+.oc-row:last-child{margin-bottom:0}
+.oc-key{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;color:var(--accent);min-width:110px;flex-shrink:0}
+
+/* ── cCR BOX ─────────────────────────────────────────── */
+.ccr-box{display:none;background:var(--card);border:1px solid var(--border);border-radius:var(--r14);box-shadow:var(--sh1);overflow:hidden;margin-bottom:1rem}
+.ccr-head{padding:9px 14px;border-bottom:1px solid var(--border2);display:flex;align-items:center;gap:9px}
+.ccr-icon{width:26px;height:26px;border-radius:7px;background:#EEF9F4;color:#1A6E3C;display:flex;align-items:center;justify-content:center;font-size:12px}
+.ccr-body{padding:12px 14px}
+.ccr-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.ccr-panel{background:var(--g100);border-radius:8px;padding:10px}
+.ccr-panel-title{font-size:10px;font-weight:700;color:var(--g900);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.ccr-panel-item{font-size:11.5px;color:var(--g700);padding:2px 0;line-height:1.5}
+.ccr-foot{margin-top:9px;font-size:10.5px;color:var(--g400);font-style:italic}
+
+/* ── RESET BTN ───────────────────────────────────────── */
+.reset-btn{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:6px 13px;border-radius:var(--r6);border:1px solid var(--g300);background:var(--card);color:var(--g600);cursor:pointer;transition:all .18s var(--ease);font-family:'Noto Sans KR',sans-serif;font-weight:500;margin-bottom:1.2rem;box-shadow:var(--sh1)}
+.reset-btn:hover{background:var(--g100);color:var(--g900);border-color:var(--g400)}
+.reset-icon{font-family:'IBM Plex Mono',monospace;font-size:13px}
+
+/* ── FOOTER ──────────────────────────────────────────── */
+.footer{background:var(--navy);padding:2rem;text-align:center;margin-top:3rem}
+.footer-title{font-family:'Libre Baskerville',serif;font-size:13px;color:rgba(255,255,255,.7);margin-bottom:4px}
+.footer-sub{font-size:11px;color:rgba(255,255,255,.33);line-height:1.75}
+.footer-refs{margin-top:1rem;font-size:10.5px;color:rgba(255,255,255,.32);line-height:2;max-width:720px;margin-left:auto;margin-right:auto;text-align:left}
+
+/* ── ANIMATIONS ──────────────────────────────────────── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.result-card,.mod-panel,.ccr-box{animation:fadeUp .22s ease}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:var(--g100)}
+::-webkit-scrollbar-thumb{background:var(--g300);border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<nav class="topbar">
+  <div class="tb-left">
+    <span class="tb-logo">LARC Simulator</span>
+    <div class="tb-sep"></div>
+    <span class="tb-sub">순천향대학교 부천병원 MDT</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:7px">
+    <span class="tb-badge">Modified Delphi Study</span>
+    <span class="tb-ver">v3.3</span>
+  </div>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-eye">Locally Advanced Rectal Cancer — Clinical Decision Support</div>
+    <h1 class="hero-title">LARC 임상 패턴 시뮬레이터<br><em>P1–P6</em> 치료 알고리즘</h1>
+    <p class="hero-desc">DM(원격전이)·LR(국소재발) 이중 축을 <strong style="color:rgba(255,255,255,.8)">Hierarchical Override Rule</strong>로 판정하여<br>최적 치료 패턴과 Patient-centered Modifier를 실시간으로 제안합니다.</p>
+    <div class="hero-logic">
+      <span class="hero-logic-icon">⚡</span>
+      <div class="hero-logic-text">
+        <strong>Hierarchical Override Model (v3.3):</strong>&nbsp;
+        High-risk factor 1개라도 존재 → 해당 축 High 확정 · Int-risk factor 1개라도 존재 → Intermediate · 모두 없을 때만 Low
+      </div>
+    </div>
+    <div class="hero-tags">
+      <span class="hero-tag">TNT · Total Neoadjuvant Therapy</span>
+      <span class="hero-tag">W&amp;W · Watch and Wait</span>
+      <span class="hero-tag">dMMR / MSI-H</span>
+      <span class="hero-tag">ESMO Guideline 2025</span>
+      <span class="hero-tag">PRODIGE 23 · RAPIDO · PROSPECT</span>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- LEGEND -->
+  <div class="legend">
+    <div class="legend-title">패턴 범례 — P1–P6 Clinically Actionable Phenotypes</div>
+    <div class="legend-grid">
+      <div class="legend-item" style="background:var(--p1-bg);border-color:var(--p1-bd);color:var(--p1-tx)"><span class="legend-dot" style="background:var(--p1-tx)"></span>P1: DM↑↑ + LR↑↑ — 복합최고위험</div>
+      <div class="legend-item" style="background:var(--p2-bg);border-color:var(--p2-bd);color:var(--p2-tx)"><span class="legend-dot" style="background:var(--p2-tx)"></span>P2: DM↑↑ + LR↑ — Systemic 우선</div>
+      <div class="legend-item" style="background:var(--p3-bg);border-color:var(--p3-bd);color:var(--p3-tx)"><span class="legend-dot" style="background:var(--p3-tx)"></span>P3: DM↑↑ + LR↓ — RT de-escalation</div>
+      <div class="legend-item" style="background:var(--p4-bg);border-color:var(--p4-bd);color:var(--p4-tx)"><span class="legend-dot" style="background:var(--p4-tx)"></span>P4: LR↑↑ dominant — CRT 국소 우선</div>
+      <div class="legend-item" style="background:var(--p5-bg);border-color:var(--p5-bd);color:var(--p5-tx)"><span class="legend-dot" style="background:var(--p5-tx)"></span>P5: Balanced Intermediate — 표준 TNT</div>
+      <div class="legend-item" style="background:var(--p6-bg);border-color:var(--p6-bd);color:var(--p6-tx)"><span class="legend-dot" style="background:var(--p6-tx)"></span>P6: DM↓ + LR↓ — Upfront TME 고려</div>
+    </div>
+  </div>
+
+  <!-- dMMR BANNER -->
+  <div class="dmmr-banner">
+    <div class="dmmr-icon">🧬</div>
+    <div class="dmmr-text">
+      <strong>dMMR / MSI-H 직장암 — 별도 치료 트랙 적용 (P1–P6 매트릭스와 독립)</strong>
+      진단 시 MMR/MSI 검사를 반드시 시행하세요. dMMR/MSI-H 확인 시 PD-1 inhibitor 기반 비수술적 전략을 MDT에서 우선 검토합니다. 약제 접근성, 급여 조건, 환자 선호를 함께 고려 (Cercek et al., NEJM 2025 · ESMO Guideline 2025).
+    </div>
+  </div>
+
+  <!-- OVERRIDE CALLOUT -->
+  <div class="override-callout">
+    <div class="oc-title">⚡ Hierarchical Override Rule — 판정 원칙</div>
+    <div class="oc-row"><span class="oc-key">DM-High factor ≥ 1개</span>→ DM-risk = <strong style="color:var(--accent)">HIGH</strong> (개수 불문)</div>
+    <div class="oc-row"><span class="oc-key">DM-High 없음 + DM-Int ≥ 1개</span>→ DM-risk = <strong style="color:#C87E10">INTERMEDIATE</strong></div>
+    <div class="oc-row"><span class="oc-key">DM-High, Int 모두 없음</span>→ DM-risk = <strong style="color:#1A6E3C">LOW</strong></div>
+    <div class="oc-row" style="margin-top:4px"><span class="oc-key">LR-High factor ≥ 1개</span>→ LR-risk = <strong style="color:var(--red-axis)">HIGH</strong> (개수 불문)</div>
+    <div class="oc-row"><span class="oc-key">LR-High 없음 + LR-Int ≥ 1개</span>→ LR-risk = <strong style="color:#C87E10">INTERMEDIATE</strong></div>
+    <div class="oc-row"><span class="oc-key">LR-High, Int 모두 없음</span>→ LR-risk = <strong style="color:#1A6E3C">LOW</strong></div>
+  </div>
+
+  <button class="reset-btn" onclick="resetAll()">
+    <span class="reset-icon">↺</span> 초기화
+  </button>
+
+  <div class="sim-grid">
+    <!-- LEFT COLUMN -->
+    <div style="display:flex;flex-direction:column;gap:1.25rem">
+
+      <!-- DM CARD -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-icon icon-dm">📡</div>
+          <div>
+            <div class="card-title">DM 위험 인자 — 원격전이(Distant Metastasis)</div>
+            <div class="card-sub">High factor 1개라도 체크 시 즉시 DM-High 확정</div>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <!-- DM HIGH -->
+          <div class="fgroup-sep">
+            <span class="fgroup-badge fbadge-high">DM-HIGH FACTORS</span>
+            <span class="fgroup-note">하나라도 → DM-High 확정</span>
+            <div class="fgroup-line"></div>
+          </div>
+          <label class="factor-item" id="fi-dmH0">
+            <input type="checkbox" class="factor-cb dm-high-cb" id="dmH0">
+            <div><div class="factor-name">mrEMVI 양성</div><div class="factor-desc">MRI-detected extramural vascular invasion — 혈관 침범, 전신 재발 위험 강력히 시사</div></div>
+          </label>
+          <label class="factor-item" id="fi-dmH1">
+            <input type="checkbox" class="factor-cb dm-high-cb" id="dmH1">
+            <div><div class="factor-name">Bulky nodal disease / N2</div><div class="factor-desc">다발성 또는 대형 림프절 전이 — 전신 미세전이 가능성 높음</div></div>
+          </label>
+          <label class="factor-item" id="fi-dmH2">
+            <input type="checkbox" class="factor-cb dm-high-cb" id="dmH2">
+            <div><div class="factor-name">T4b</div><div class="factor-desc">인접 장기 또는 구조물 침윤 — 불량한 종양 생물학적 특성</div></div>
+          </label>
+          <label class="factor-item" id="fi-dmH3">
+            <input type="checkbox" class="factor-cb dm-high-cb" id="dmH3">
+            <div><div class="factor-name">Tumor deposits</div><div class="factor-desc">종양 파종 — 혈행성/림프성 전파 시사, 전신 미세전이 위험 증가</div></div>
+          </label>
+
+          <!-- DM INTERMEDIATE -->
+          <div class="fgroup-sep" style="margin-top:12px">
+            <span class="fgroup-badge fbadge-int">DM-INTERMEDIATE FACTORS</span>
+            <span class="fgroup-note">High 없을 때 유효</span>
+            <div class="fgroup-line"></div>
+          </div>
+          <label class="factor-item" id="fi-dmI0">
+            <input type="checkbox" class="factor-cb dm-int-cb" id="dmI0">
+            <div><div class="factor-name">N1 disease</div><div class="factor-desc">제한적 림프절 부담 — N2 기준 미달이나 의미 있는 nodal involvement 존재</div></div>
+          </label>
+          <label class="factor-item" id="fi-dmI1">
+            <input type="checkbox" class="factor-cb dm-int-cb" id="dmI1">
+            <div><div class="factor-name">T3c/d (깊은 mesorectal 침범 &gt;5mm)</div><div class="factor-desc">T4 기준 미달이나 mesorectal fascia 근접 침범 — 중간 수준 전신 위험</div></div>
+          </label>
+          <label class="factor-item" id="fi-dmI2">
+            <input type="checkbox" class="factor-cb dm-int-cb" id="dmI2">
+            <div><div class="factor-name">Borderline systemic risk 복합 인자</div><div class="factor-desc">단독으로는 High 기준 미달이나 복합 시 전신 재발 위험 의미 있게 상승</div></div>
+          </label>
+
+          <!-- DM AXIS BAR -->
+          <div class="axis-bar">
+            <div class="axis-segs">
+              <div class="axis-seg" id="dm-seg1"></div>
+              <div class="axis-seg" id="dm-seg2"></div>
+              <div class="axis-seg" id="dm-seg3"></div>
+            </div>
+            <span class="axis-badge ab-none" id="dm-badge">선택 없음</span>
+          </div>
+          <div class="axis-rule" id="dm-rule">위험인자를 선택하면 Hierarchical Override Rule이 적용됩니다.</div>
+        </div>
+      </div>
+
+      <!-- LR CARD -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-icon icon-lr">🎯</div>
+          <div>
+            <div class="card-title">LR 위험 인자 — 국소재발(Local Recurrence)</div>
+            <div class="card-sub">High factor 1개라도 체크 시 즉시 LR-High 확정</div>
+          </div>
+        </div>
+        <div class="card-body">
+
+          <!-- LR HIGH -->
+          <div class="fgroup-sep">
+            <span class="fgroup-badge fbadge-high-lr">LR-HIGH FACTORS</span>
+            <span class="fgroup-note">하나라도 → LR-High 확정</span>
+            <div class="fgroup-line"></div>
+          </div>
+          <label class="factor-item" id="fi-lrH0">
+            <input type="checkbox" class="factor-cb lr-high-cb" id="lrH0">
+            <div><div class="factor-name">Threatened / Involved CRM</div><div class="factor-desc">원형절제연 위협(≤1mm) 또는 침범 — 국소재발의 가장 강력한 예측인자</div></div>
+          </label>
+          <label class="factor-item" id="fi-lrH1">
+            <input type="checkbox" class="factor-cb lr-high-cb" id="lrH1">
+            <div><div class="factor-name">Very low rectal tumor (≤5cm from AV)</div><div class="factor-desc">항문연에서 ≤5 cm — 괄약근 보존 수술 계획 복잡성 크게 증가</div></div>
+          </label>
+          <label class="factor-item" id="fi-lrH2">
+            <input type="checkbox" class="factor-cb lr-high-cb" id="lrH2">
+            <div><div class="factor-name">Sphincter-threatening anatomy</div><div class="factor-desc">내·외 괄약근 또는 levator 침범 위협 — 수술 범위 및 방사선 계획에 직접 영향</div></div>
+          </label>
+          <label class="factor-item" id="fi-lrH3">
+            <input type="checkbox" class="factor-cb lr-high-cb" id="lrH3">
+            <div><div class="factor-name">Clinically significant LPLN (≥7mm)</div><div class="factor-desc">측방골반 림프절 의심 — LLND 또는 확장 방사선 범위 고려 필요</div></div>
+          </label>
+
+          <!-- LR INTERMEDIATE -->
+          <div class="fgroup-sep" style="margin-top:12px">
+            <span class="fgroup-badge fbadge-int">LR-INTERMEDIATE FACTORS</span>
+            <span class="fgroup-note">High 없을 때 유효</span>
+            <div class="fgroup-line"></div>
+          </div>
+          <label class="factor-item" id="fi-lrI0">
+            <input type="checkbox" class="factor-cb lr-int-cb" id="lrI0">
+            <div><div class="factor-name">Clear but narrow CRM (1–3mm)</div><div class="factor-desc">CRM clear이나 여유가 좁음 — 국소재발 위험 중간, LR-high 기준 미달</div></div>
+          </label>
+          <label class="factor-item" id="fi-lrI1">
+            <input type="checkbox" class="factor-cb lr-int-cb" id="lrI1">
+            <div><div class="factor-name">Low rectal location (definite sphincter threat 부재)</div><div class="factor-desc">저위 직장이나 괄약근 직접 위협은 없음 — 수술 계획 난이도 중간</div></div>
+          </label>
+          <label class="factor-item" id="fi-lrI2">
+            <input type="checkbox" class="factor-cb lr-int-cb" id="lrI2">
+            <div><div class="factor-name">Equivocal LPLN (5–7mm, indeterminate)</div><div class="factor-desc">크기 및 형태 기준 불확실 — LR-high 판정 불가, 중등도 국소 우려</div></div>
+          </label>
+
+          <!-- LR AXIS BAR -->
+          <div class="axis-bar">
+            <div class="axis-segs">
+              <div class="axis-seg" id="lr-seg1"></div>
+              <div class="axis-seg" id="lr-seg2"></div>
+              <div class="axis-seg" id="lr-seg3"></div>
+            </div>
+            <span class="axis-badge ab-none" id="lr-badge">선택 없음</span>
+          </div>
+          <div class="axis-rule" id="lr-rule">위험인자를 선택하면 Hierarchical Override Rule이 적용됩니다.</div>
+        </div>
+      </div>
+
+      <!-- MODIFIER CARD -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-icon icon-mod">⚙️</div>
+          <div>
+            <div class="card-title">Patient-centered Modifier</div>
+            <div class="card-sub">치료 강도·방향을 조정하는 환자 중심 요인</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="msec-label">Modifier A — Organ Preservation</div>
+          <label class="mod-item" id="mi-organ">
+            <input type="checkbox" id="mod-organ" class="factor-cb">
+            <span class="mod-code">A</span>
+            <span class="mod-label">장기 보존 강한 선호 — W&amp;W 전략 고려 희망</span>
+          </label>
+          <div class="msec-label">Modifier B — 치료 강도 조정</div>
+          <label class="mod-item" id="mi-age">
+            <input type="checkbox" id="mod-age" class="factor-cb">
+            <span class="mod-code">B1</span>
+            <span class="mod-label">Older but fit — 연령 단독으로 치료 감량 불가</span>
+          </label>
+          <label class="mod-item" id="mi-frail">
+            <input type="checkbox" id="mod-frail" class="factor-cb">
+            <span class="mod-code">B2</span>
+            <span class="mod-label">Frailty-positive — G8 / CGA 취약성 확인</span>
+          </label>
+          <label class="mod-item" id="mi-ps">
+            <input type="checkbox" id="mod-ps" class="factor-cb">
+            <span class="mod-code">B3</span>
+            <span class="mod-label">Poor PS — 비가역적 기능 저하 확인</span>
+          </label>
+          <div class="msec-label">Modifier C — RT 비표준 경로</div>
+          <label class="mod-item" id="mi-rt1">
+            <input type="checkbox" id="mod-rt1" class="factor-cb">
+            <span class="mod-code">C1</span>
+            <span class="mod-label">방사선치료 의학적 금기</span>
+          </label>
+          <label class="mod-item" id="mi-rt2">
+            <input type="checkbox" id="mod-rt2" class="factor-cb">
+            <span class="mod-code">C2</span>
+            <span class="mod-label">충분한 설명 후 환자의 강한 RT 거부</span>
+          </label>
+          <label class="mod-item" id="mi-rt3">
+            <input type="checkbox" id="mod-rt3" class="factor-cb">
+            <span class="mod-code">C3</span>
+            <span class="mod-label">중대한 물류 · 접근성 제한</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div>
+
+      <!-- STATS -->
+      <div class="stats-strip">
+        <div class="stat-card">
+          <span class="stat-val sv-dm" id="dm-high-cnt">0</span>
+          <span class="stat-key">DM-High</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-val sv-lr" id="lr-high-cnt">0</span>
+          <span class="stat-key">LR-High</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-val" id="dm-lv-disp" style="font-size:14px;font-family:'IBM Plex Mono',monospace">—</span>
+          <span class="stat-key">DM Level</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-val val-p" id="p-display" style="color:var(--navy)">—</span>
+          <span class="stat-key">패턴</span>
+        </div>
+      </div>
+
+      <!-- MATRIX -->
+      <div class="matrix-card">
+        <div class="mx-title">DM × LR 위험도 매트릭스 — Hierarchical Override 3×3</div>
+        <div class="mx-grid">
+          <div class="mx-corner">DM ↓ / LR →</div>
+          <div class="mx-col">LR<br><strong>High</strong></div>
+          <div class="mx-col">LR<br><strong>Int.</strong></div>
+          <div class="mx-col">LR<br><strong>Low</strong></div>
+
+          <div class="mx-row">DM<br><strong>High</strong></div>
+          <div class="mx-cell c-p1" id="mx-HH"><span class="pc">P1</span><span class="pd">복합 최고위험</span></div>
+          <div class="mx-cell c-p2" id="mx-HI"><span class="pc">P2</span><span class="pd">Systemic 우선</span></div>
+          <div class="mx-cell c-p3" id="mx-HL"><span class="pc">P3</span><span class="pd">RT de-esc.</span></div>
+
+          <div class="mx-row">DM<br><strong>Int.</strong></div>
+          <div class="mx-cell c-p4" id="mx-IH"><span class="pc">P4</span><span class="pd">LR-dominant</span></div>
+          <div class="mx-cell c-p5" id="mx-II"><span class="pc">P5</span><span class="pd">Balanced TNT</span></div>
+          <div class="mx-cell c-p5" id="mx-IL"><span class="pc">P5</span><span class="pd">선택적</span></div>
+
+          <div class="mx-row">DM<br><strong>Low</strong></div>
+          <div class="mx-cell c-p4" id="mx-LH"><span class="pc">P4</span><span class="pd">LR-dominant</span></div>
+          <div class="mx-cell c-p5" id="mx-LI"><span class="pc">P5</span><span class="pd">선택적</span></div>
+          <div class="mx-cell c-p6" id="mx-LL"><span class="pc">P6</span><span class="pd">Upfront TME</span></div>
+        </div>
+        <div class="mx-note">
+          <span class="dm">DM-High</span> factor 1개 이상 = DM High /
+          <span class="dm">DM-Int</span> factor 1개 이상(High 없음) = DM Int.<br>
+          <span class="lr">LR-High</span> factor 1개 이상 = LR High /
+          <span class="lr">LR-Int</span> factor 1개 이상(High 없음) = LR Int.<br>
+          ※ <strong>P4 = DM-Int/Low + LR-High</strong> 모두 포함 (치료전략 LR-dominant로 수렴)
+        </div>
+      </div>
+
+      <!-- RESULT CARD -->
+      <div class="result-card" id="result-card">
+        <div class="rc-top">
+          <div>
+            <div class="rc-title" id="rc-title">위험 인자를 선택하면 임상 패턴이 결정됩니다</div>
+            <div class="rc-sub" id="rc-sub">DM 인자와 LR 인자를 체크하세요</div>
+          </div>
+          <span class="rc-pill" id="rc-pill" style="display:none"></span>
+        </div>
+        <div class="rc-div"></div>
+        <div class="rc-tx" id="rc-tx"></div>
+        <div class="rc-note" id="rc-note" style="display:none"></div>
+        <div class="rc-refs" id="rc-refs"></div>
+      </div>
+
+      <!-- MODIFIER RESULTS -->
+      <div class="mod-panel" id="mod-panel">
+        <div class="mod-panel-head">⚙ Modifier 적용 — 치료 조정 권고</div>
+        <div class="mod-panel-body" id="mod-panel-body"></div>
+      </div>
+
+      <!-- cCR W&W BOX -->
+      <div class="ccr-box" id="ccr-box">
+        <div class="ccr-head">
+          <div class="ccr-icon">✓</div>
+          <div>
+            <div class="card-title">cCR 판정 및 W&amp;W 추적 원칙</div>
+            <div class="card-sub">Modifier A 적용 시 — 종양학적 안전성 범위 내 적용</div>
+          </div>
+        </div>
+        <div class="ccr-body">
+          <div class="ccr-grid">
+            <div class="ccr-panel">
+              <div class="ccr-panel-title">cCR 판정 기준 (통합)</div>
+              <div class="ccr-panel-item">📋 DRE — 촉지 종양 없음</div>
+              <div class="ccr-panel-item">🔬 내시경 — 백색반흔, 점막 재생</div>
+              <div class="ccr-panel-item">🧲 MRI — mrTRG 1–2, 잔류 신호 없음</div>
+              <div class="ccr-panel-item">📊 CEA — 보조 지표 (단독 기준 ✗)</div>
+            </div>
+            <div class="ccr-panel">
+              <div class="ccr-panel-title">W&amp;W 추적 강도</div>
+              <div class="ccr-panel-item">🔴 0–12개월: 1–2개월마다</div>
+              <div class="ccr-panel-item">🟡 13–24개월: 2–3개월마다</div>
+              <div class="ccr-panel-item">🟢 25–36개월: 3–6개월마다</div>
+              <div class="ccr-panel-item">⚠️ Regrowth → Salvage surgery</div>
+            </div>
+          </div>
+          <div class="ccr-foot">OPRA 장기결과: regrowth의 94%는 2년 내, 99%는 3년 내 발생 (Verheij et al., JCO 2024 · PMID 37883738)</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="footer-title">LARC MDT 컨센서스 알고리즘 시뮬레이터 v3.3 — 순천향대학교 부천병원</div>
+  <div class="footer-sub">
+    Modified Delphi 연구 프로토콜 v3.3 · DM/LR Hierarchical Override Model · IRB 2026-03-010<br>
+    본 도구는 임상 의사결정 지원 참고자료입니다. 최종 치료 결정은 반드시 MDT 논의를 통해 이루어져야 합니다.
+  </div>
+  <div class="footer-refs">
+    <strong style="color:rgba(255,255,255,.5);font-size:10px">근거 문헌</strong><br>
+    1. Conroy T et al. UNICANCER-PRODIGE 23 long-term results. Ann Oncol 2024. PMID 38986769<br>
+    2. Bahadoer RR et al. RAPIDO trial. Lancet Oncol 2021. PMID 33301740<br>
+    3. Schrag D et al. PROSPECT trial. N Engl J Med 2023. PMID 37272534<br>
+    4. Verheij FS et al. OPRA Trial long-term results. J Clin Oncol 2024. PMID 37883738<br>
+    5. Diefenhardt M et al. CAO/ARO/AIO-12 5-year results. ESMO Open 2025. PMID 40056849<br>
+    6. Cercek A et al. Nonoperative management of dMMR tumors. N Engl J Med 2025. PMID 40293177<br>
+    7. Hofheinz RD et al. ESMO Clinical Practice Guideline 2025. Ann Oncol 2025;36(9):1007–1024. PMID 40412553
+  </div>
+</footer>
+
+<script>
+/* ── PATTERNS ──────────────────────────────────────── */
+const PATTERNS = {
+  HH:{id:'P1',cls:'rp1',pc:'pp1',
+    title:'P1 — DM High + LR High: 복합 최고위험 패턴',sub:'전신·국소 이중 고위험 — TNT 최강화 + 정교한 수술 계획',
+    tx:'전신치료 강화와 표준 CRT를 포함한 TNT 전략을 권고합니다. mFOLFIRINOX 기반 유도화학요법(INCT) 또는 SCRT + 유도화학요법 후 표준 long-course CRT 접근을 고려하며, 두 전략의 선택은 MDT 내 레짐 결정이 필요합니다. LR-High 인자(CRM, LPLN, 저위 직장 해부)에 맞춘 수술 계획 최적화 필수. 수술 전 종양 반응 평가 필수.',
+    note:'PRODIGE 23: mFOLFIRINOX TNT가 5년 DFS 유의한 이점 확인. RAPIDO: SCRT 기반 TNT 전신 조절 가능성 제시. 두 전략의 head-to-head 비교 데이터 부재 — MDT 논의에서 레짐을 결정. 동일 P1이라도 high-risk factor 중첩 정도에 따라 실제 치료 복잡도가 달라질 수 있음.',
+    refs:'📚 PRODIGE 23 (Ann Oncol 2024) · RAPIDO (Lancet Oncol 2021) · ESMO Guideline 2025'},
+  HI:{id:'P2',cls:'rp2',pc:'pp2',
+    title:'P2 — DM High + LR Intermediate: Systemic 우선 패턴',sub:'전신재발 고위험 지배적, 국소위험 중등도',
+    tx:'Systemic therapy 우선 TNT 후 CRT 및 수술 전략. 유도화학요법으로 전신 미세전이를 먼저 조절한 뒤 표준 long-course CRT로 국소 제어. LR-intermediate 위험이 동반되므로 CRT 생략은 권장하지 않음. 국소 해부학을 반영한 수술 계획 필요.',
+    note:'전신치료 우선 접근이 DM 고위험군에서 원격전이 억제에 기여할 수 있으나, 국소 제어를 위한 CRT를 유지하는 것이 표준입니다. 치료 순서 설계는 MDT에서 개별 결정.',
+    refs:'📚 PRODIGE 23 · RAPIDO · ESMO Guideline 2025 (Ann Oncol 36:1007)'},
+  HL:{id:'P3',cls:'rp3',pc:'pp3',
+    title:'P3 — DM High + LR Low: DM-dominant RT de-escalation 패턴',sub:'전신재발 고위험, 국소위험 낮음',
+    tx:'Systemic-first 접근을 우선하며, RT de-escalation 가능성을 MDT에서 검토합니다. 전신치료 후 국소위험 재평가를 통해 RT 적용 여부를 결정하는 개별화 전략. P3는 특정 단일 레짐으로 고정하지 않으며 \'systemic-first + selective RT de-escalation\'의 개념 타당성은 MDT 논의를 통해 결정.',
+    note:'PROSPECT: 선택된 저국소위험군에서 FOLFOX 기반 + 선택적 CRT 가능성 평가. LR-Low로 판정되었더라도 수술 결과 및 병리 소견에 따라 RT 적용 여부를 재검토할 수 있음.',
+    refs:'📚 PROSPECT (N Engl J Med 2023) · ESMO Guideline 2025'},
+  IH:{id:'P4',cls:'rp4',pc:'pp4',
+    title:'P4 — DM Int/Low + LR High: LR-dominant 국소 제어 패턴',sub:'LR-High 지배적 — CRT·수술 계획 최적화가 핵심',
+    tx:'CRT 중심 국소 제어 우선 전략. 표준 long-course CRT 또는 SCRT 후 consolidation 화학요법. 수술 계획 시 CRM 확보, LPLN 양성의 경우 LLND 또는 방사선 범위 확대 고려. DM 위험이 낮더라도 LR-High 인자가 있으면 국소치료 강도 유지가 원칙. 수술 전 re-staging MRI 필수.',
+    note:'LR-High factor(CRM, 저위 직장, LPLN 등)가 있을 때 국소치료 강도 유지가 핵심. CAO/ARO/AIO-12 5년 결과: CRT 후 consolidation 접근이 organ preservation에 유리할 수 있음. DM-Intermediate와 DM-Low 모두 LR-High 조합은 P4로 통합 — 치료전략이 LR-dominant local control intensification으로 수렴.',
+    refs:'📚 CAO/ARO/AIO-12 5yr (ESMO Open 2025) · ESMO Guideline 2025'},
+  LH:{id:'P4',cls:'rp4',pc:'pp4', // same as IH
+    title:'P4 — DM Low + LR High: LR-dominant 국소 제어 패턴',sub:'DM 저위험, LR-High 지배적 — 국소치료 집중',
+    tx:'국소 제어 우선 전략. CRT 기반 접근, CRM/LPLN/저위 직장 등 LR-High 인자에 최적화된 수술 계획. DM 위험이 낮더라도 LR-High anatomy가 치료 설계를 지배. 수술 범위(LLND 포함 여부)와 방사선 계획 최적화를 MDT에서 명확히 결정해야 합니다.',
+    note:'LR-High 인자에 집중한 치료 강도 유지가 필요. DM-Low + LR-High는 DM-Int + LR-High와 동일 phenotype P4로 통합 — 실제 치료전략이 LR-dominant local control intensification으로 수렴하기 때문.',
+    refs:'📚 ESMO Guideline 2025 · CAO/ARO/AIO-12 5yr'},
+  II:{id:'P5',cls:'rp5',pc:'pp5',
+    title:'P5 — Balanced Intermediate: 표준 TNT 패턴',sub:'전신·국소 중등도 균형 위험 — 표준 치료로 접근',
+    tx:'표준 TNT 전략. Long-course CRT 기반 표준 TNT를 원칙으로 하며, 환자·종양 인자에 따라 SCRT + consolidation 화학요법 전략도 고려. 추가 강화의 이득은 개별 위험도와 장기 보존 선호도에 따라 달라집니다.',
+    note:'중등도 위험 양축에서 표준적 TNT가 기본 접근. DM-Intermediate + LR-Intermediate, DM-Intermediate + LR-Low, DM-Low + LR-Intermediate는 모두 P5로 통합 — 실질적 치료전략이 standard treatment with selective intensification/de-intensification 범주로 수렴.',
+    refs:'📚 RAPIDO · CAO/ARO/AIO-12 · ESMO Guideline 2025'},
+  IL:{id:'P5',cls:'rp5',pc:'pp5',
+    title:'P5 — DM Intermediate + LR Low: Systemic 중심 선택적 전략',sub:'전신 중등도, 국소 낮음 — 전신치료 중심 조율',
+    tx:'전신 위험 관리 중심 접근. 표준 TNT 또는 전신치료 선행 후 선택적 RT 검토. 국소 치료 강도는 개별 종양 인자와 MDT 논의를 바탕으로 조율. LR-Low 판정 시에도 수술 계획 전 MRI re-staging을 통해 국소위험 재확인 필요.',
+    note:'LR 위험이 낮으므로 RT 강도 조정을 탐색할 수 있으나, DM-Intermediate 관리가 우선입니다.',
+    refs:'📚 ESMO Guideline 2025'},
+  LI:{id:'P5',cls:'rp5',pc:'pp5',
+    title:'P5 — DM Low + LR Intermediate: 선택적 접근',sub:'전신 낮음, 국소 중등도 — 국소 인자 중심 조율',
+    tx:'선택적 neoadjuvant 접근. PROSPECT 기준에 부합하는 T3 중등도 위험군에서 FOLFOX 우선 후 선택적 CRT 전략 논의 가능. 전신 치료 부담을 줄이면서 국소 위험을 관리하는 균형 전략.',
+    note:'저위험 양축에서는 불필요한 치료 강도 증가를 피하는 것이 원칙. PROSPECT 편입 기준(cT2N+, cT3N any, 저위 직장 제외)을 확인하여 적용 여부 검토.',
+    refs:'📚 PROSPECT (N Engl J Med 2023) · ESMO Guideline 2025'},
+  LL:{id:'P6',cls:'rp6',pc:'pp6',
+    title:'P6 — DM Low + LR Low: 전반적 저위험 패턴',sub:'고위험 인자 없음 — Upfront TME 또는 제한적 Neoadjuvant',
+    tx:'Upfront TME 또는 제한적 neoadjuvant 접근을 우선 검토. 고위험 인자 없는 경우 수술 단독 또는 SCRT 선행 후 수술. 불필요한 전신치료 강화는 피하며, 치료 과부하를 방지하는 것이 원칙. 경험 있는 수술팀에서 표준 TME 단독으로도 우수한 결과 기대 가능.',
+    note:'저위험군에서 치료 과부하 방지가 원칙. P6는 단독 phenotype으로 유지 — upfront surgery 또는 limited neoadjuvant라는 명확한 임상 의미.',
+    refs:'📚 ESMO Guideline 2025'}
+};
+
+/* ── MATRIX MAPPING ──────────────────────────────── */
+const PAT_MAP = {HH:'HH',HI:'HI',HL:'HL',IH:'IH',II:'II',IL:'IL',LH:'LH',LI:'LI',LL:'LL'};
+
+/* ── HIERARCHICAL OVERRIDE ────────────────────────── */
+function getAxisRisk(highCount, intCount) {
+  if (highCount > 0) return 'H';
+  if (intCount  > 0) return 'I';
+  return 'L';
+}
+
+function updateAxisBar(prefix, level) {
+  const segs = [1,2,3].map(i => document.getElementById(prefix+'-seg'+i));
+  const badge = document.getElementById(prefix+'-badge');
+  const rule  = document.getElementById(prefix+'-rule');
+  const isDm  = prefix === 'dm';
+
+  segs.forEach(s => s.className = 'axis-seg');
+
+  if (level === 'H') {
+    segs.forEach(s => s.classList.add('as-high'));
+    badge.className = 'axis-badge ' + (isDm ? 'ab-high-dm' : 'ab-high-lr');
+    badge.textContent = (isDm ? 'DM' : 'LR') + '-HIGH ⚑';
+    rule.innerHTML = isDm
+      ? '<strong>DM-High factor 확인됨</strong> → High-risk override 적용. 인자 개수와 무관.'
+      : '<strong>LR-High factor 확인됨</strong> → High-risk override 적용. 인자 개수와 무관.';
+  } else if (level === 'I') {
+    segs[0].classList.add('as-int'); segs[1].classList.add('as-int');
+    badge.className = 'axis-badge ab-int';
+    badge.textContent = (isDm ? 'DM' : 'LR') + '-Intermediate';
+    rule.innerHTML = isDm
+      ? 'DM-High factor 없음 → <strong>DM-Int factor 확인됨</strong> → Intermediate 판정.'
+      : 'LR-High factor 없음 → <strong>LR-Int factor 확인됨</strong> → Intermediate 판정.';
+  } else if (level === 'L') {
+    segs[0].classList.add('as-low');
+    badge.className = 'axis-badge ' + (isDm ? 'ab-low-dm' : 'ab-low-lr');
+    badge.textContent = (isDm ? 'DM' : 'LR') + '-Low';
+    rule.innerHTML = isDm
+      ? 'DM-High, DM-Int factor 모두 없음 → <strong>DM-Low</strong> 판정.'
+      : 'LR-High, LR-Int factor 모두 없음 → <strong>LR-Low</strong> 판정.';
+  } else {
+    badge.className = 'axis-badge ab-none';
+    badge.textContent = '선택 없음';
+    rule.innerHTML = '위험인자를 선택하면 Hierarchical Override Rule이 적용됩니다.';
+  }
+}
+
+/* ── MAIN UPDATE ─────────────────────────────────── */
+function update() {
+  // Collect
+  const dmHighIds = ['dmH0','dmH1','dmH2','dmH3'];
+  const dmIntIds  = ['dmI0','dmI1','dmI2'];
+  const lrHighIds = ['lrH0','lrH1','lrH2','lrH3'];
+  const lrIntIds  = ['lrI0','lrI1','lrI2'];
+
+  const dmHighCnt = dmHighIds.filter(id=>document.getElementById(id).checked).length;
+  const dmIntCnt  = dmIntIds.filter(id=>document.getElementById(id).checked).length;
+  const lrHighCnt = lrHighIds.filter(id=>document.getElementById(id).checked).length;
+  const lrIntCnt  = lrIntIds.filter(id=>document.getElementById(id).checked).length;
+
+  const dmLevel = (dmHighCnt+dmIntCnt===0) ? null : getAxisRisk(dmHighCnt, dmIntCnt);
+  const lrLevel = (lrHighCnt+lrIntCnt===0) ? null : getAxisRisk(lrHighCnt, lrIntCnt);
+
+  // Stats
+  document.getElementById('dm-high-cnt').textContent = dmHighCnt;
+  document.getElementById('lr-high-cnt').textContent = lrHighCnt;
+
+  const dmLvDisp = document.getElementById('dm-lv-disp');
+  if (!dmLevel) { dmLvDisp.textContent = '—'; dmLvDisp.style.color='var(--g400)'; }
+  else {
+    dmLvDisp.textContent = dmLevel;
+    dmLvDisp.style.color = dmLevel==='H' ? 'var(--accent)' : dmLevel==='I' ? '#C87E10' : '#1A6E3C';
+  }
+
+  // Axis bars
+  updateAxisBar('dm', dmLevel);
+  updateAxisBar('lr', lrLevel);
+
+  // Highlight factor items
+  dmHighIds.forEach((id,i)=>{
+    const fi = document.getElementById('fi-dmH'+i);
+    const cb = document.getElementById(id);
+    if(fi) fi.className = 'factor-item' + (cb.checked ? ' sel-dm-high' : '');
+  });
+  dmIntIds.forEach((id,i)=>{
+    const fi = document.getElementById('fi-dmI'+i);
+    const cb = document.getElementById(id);
+    if(fi) fi.className = 'factor-item' + (cb.checked ? ' sel-dm-int' : '');
+  });
+  lrHighIds.forEach((id,i)=>{
+    const fi = document.getElementById('fi-lrH'+i);
+    const cb = document.getElementById(id);
+    if(fi) fi.className = 'factor-item' + (cb.checked ? ' sel-lr-high' : '');
+  });
+  lrIntIds.forEach((id,i)=>{
+    const fi = document.getElementById('fi-lrI'+i);
+    const cb = document.getElementById(id);
+    if(fi) fi.className = 'factor-item' + (cb.checked ? ' sel-lr-int' : '');
+  });
+
+  // Matrix & pattern
+  clearMatrix();
+
+  if (!dmLevel || !lrLevel) {
+    document.getElementById('p-display').textContent = '—';
+    resetResultCard();
+    updateModifiers(null, dmLevel, lrLevel);
+    return;
+  }
+
+  const key = dmLevel + lrLevel;
+  const patKey = PAT_MAP[key];
+  const pat = PATTERNS[patKey];
+
+  document.getElementById('p-display').textContent = pat ? pat.id : '—';
+
+  // Active cell: map LH to LH, IH to IH
+  const cellId = 'mx-' + key;
+  const cell = document.getElementById(cellId);
+  if (cell) cell.classList.add('active');
+
+  if (pat) {
+    const card = document.getElementById('result-card');
+    card.className = 'result-card ' + pat.cls;
+    document.getElementById('rc-title').textContent = pat.title;
+    document.getElementById('rc-sub').textContent = pat.sub;
+    const pill = document.getElementById('rc-pill');
+    pill.textContent = pat.id;
+    pill.className = 'rc-pill ' + pat.pc;
+    pill.style.display = '';
+    document.getElementById('rc-tx').innerHTML = pat.tx.replace(/\n/g,'<br>');
+    const noteEl = document.getElementById('rc-note');
+    noteEl.textContent = pat.note;
+    noteEl.style.display = '';
+    document.getElementById('rc-refs').textContent = pat.refs;
+  }
+
+  updateModifiers(pat, dmLevel, lrLevel);
+}
+
+function clearMatrix() {
+  ['HH','HI','HL','IH','II','IL','LH','LI','LL'].forEach(k=>{
+    const el = document.getElementById('mx-'+k);
+    if(el) el.classList.remove('active');
+  });
+}
+
+function resetResultCard() {
+  const card = document.getElementById('result-card');
+  card.className = 'result-card';
+  document.getElementById('rc-title').textContent = '위험 인자를 선택하면 임상 패턴이 결정됩니다';
+  document.getElementById('rc-sub').textContent = 'DM 인자와 LR 인자를 체크하세요';
+  document.getElementById('rc-tx').innerHTML = '';
+  document.getElementById('rc-note').style.display = 'none';
+  document.getElementById('rc-refs').textContent = '';
+  document.getElementById('rc-pill').style.display = 'none';
+}
+
+function updateModifiers(pat, dmL, lrL) {
+  const organ = document.getElementById('mod-organ').checked;
+  const age   = document.getElementById('mod-age').checked;
+  const frail = document.getElementById('mod-frail').checked;
+  const ps    = document.getElementById('mod-ps').checked;
+  const rt1   = document.getElementById('mod-rt1').checked;
+  const rt2   = document.getElementById('mod-rt2').checked;
+  const rt3   = document.getElementById('mod-rt3').checked;
+
+  const modMap = {organ:'mi-organ',age:'mi-age',frail:'mi-frail',ps:'mi-ps',rt1:'mi-rt1',rt2:'mi-rt2',rt3:'mi-rt3'};
+  Object.entries({organ,age,frail,ps,rt1,rt2,rt3}).forEach(([k,v])=>{
+    const el = document.getElementById(modMap[k]);
+    if(el) el.className = 'mod-item' + (v ? ' sel' : '');
+  });
+
+  document.getElementById('ccr-box').style.display = organ ? '' : 'none';
+
+  const lines = [];
+  if (organ) {
+    if (dmL === 'H' || lrL === 'H')
+      lines.push({icon:'⚑',text:'Modifier A: 장기 보존 선호 → TNT 완료 후 DRE + 내시경 + MRI 통합 cCR 평가 필수. cCR 달성 시 W&W 전략 MDT 논의. 단, 종양학적 안전성(특히 LR-High anatomy) 확보 범위 내에서만 적용. (하단 cCR/W&W 기준 참조)'});
+    else
+      lines.push({icon:'⚑',text:'Modifier A: 장기 보존 선호 → W&W 전략 적용 가능성 평가. DRE + 내시경 + MRI 통합 cCR 판정 기준 적용. 초기 2년 집중 추적 필수. Regrowth 94%는 2년 내 발생.'});
+  }
+  if (age) lines.push({icon:'⚑',text:'Modifier B1: 고령이지만 functional status 양호(fit) → 연령 단독으로 치료 감량 불가. 표준 치료 원칙 유지. GA를 통한 fit 상태 확인 권고 (ESMO/SIOG 2024).'});
+  if (frail) lines.push({icon:'⚑',text:'Modifier B2: Frailty 확인(G8/CGA 취약성) → 치료 강도 및 목표 조정 필요. 유도화학요법 용량·스케줄 수정 고려. 지지요법(영양, 재활) 병행. ESMO/SIOG Cancer in the Elderly Working Group 권고문 참조.'});
+  if (ps) lines.push({icon:'⚑',text:'Modifier B3: Poor PS → 가역적 원인(빈혈, 통증, 영양 불량) 먼저 교정 시도. 비가역적 기능저하 확인 시 치료 목표 재설정(curative → palliative). MDT 공식 기록 필수.'});
+  if (rt1) lines.push({icon:'⚑',text:'Modifier C1: RT 의학적 금기 → 전신화학요법 단독 또는 수술 우선 접근 검토. C1 적용 사유를 MDT 의사록에 구체적으로 기재 필요.'});
+  if (rt2) lines.push({icon:'⚑',text:'Modifier C2: 환자의 강한 RT 거부 → 충분한 설명 후 동의 재확인. 거부 지속 시 systemic-first + 선택적 수술 전략. 설명 및 거부 사실을 의무기록에 상세히 기재.'});
+  if (rt3) lines.push({icon:'⚑',text:'Modifier C3: RT 접근성·물류 제한 → SCRT(단기 분할) 일정으로 물류 부담 최소화 검토. 불가 시 수술 우선 또는 전신치료 단독 접근.'});
+
+  const panel = document.getElementById('mod-panel');
+  const body  = document.getElementById('mod-panel-body');
+  if (lines.length > 0) {
+    body.innerHTML = lines.map(l=>`<div class="mod-item-result"><span class="mod-icon">${l.icon}</span><span>${l.text}</span></div>`).join('');
+    panel.style.display = '';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function resetAll() {
+  document.querySelectorAll('.factor-cb').forEach(cb=>cb.checked=false);
+  update();
+}
+
+// Event listeners
+document.querySelectorAll('.factor-cb').forEach(cb=>cb.addEventListener('change',update));
+update();
+</script>
+</body>
+</html>
